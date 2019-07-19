@@ -1,4 +1,4 @@
-val ScalatraVersion = "2.7.0-RC1"
+
 
 organization := "de.tu-dresden"
 
@@ -11,12 +11,15 @@ scalaVersion := "2.12.6"
 resolvers += Classpaths.typesafeReleases
 
 libraryDependencies ++= Seq(
-  "org.scalatra" %% "scalatra" % ScalatraVersion,
-  "org.scalatra" %% "scalatra-scalatest" % ScalatraVersion % "test",
-  "ch.qos.logback" % "logback-classic" % "1.2.3" % "runtime",
-  "org.eclipse.jetty" % "jetty-webapp" % "9.4.9.v20180320" % "container",
-  "javax.servlet" % "javax.servlet-api" % "3.1.0" % "provided"
+  "org.phenoscape" %% "scowl" % "1.3",
+  "net.sourceforge.owlapi" %  "owlapi-distribution"    % "4.2.7",
+  "com.typesafe.scala-logging" %% "scala-logging" % "3.9.0",
+  "org.slf4j" % "slf4j-simple" % "1.7.26" % Test,
+  "org.postgresql" % "postgresql" % "9.3-1100-jdbc4",
+  "org.scalikejdbc" %% "scalikejdbc"       % "3.3.2",
+  "com.typesafe.slick" %% "slick" % "3.2.0",
+  "org.scalatest" %% "scalatest" % "3.0.5" % Test,
+  "org.semanticweb.elk" %  "elk-reasoner"    % "0.4.3",
+  "org.semanticweb.elk" %  "elk-owlapi"    % "0.4.3"
 )
 
-enablePlugins(SbtTwirl)
-enablePlugins(ScalatraPlugin)
