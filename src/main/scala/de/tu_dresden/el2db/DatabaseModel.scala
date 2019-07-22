@@ -7,6 +7,7 @@ import de.tu_dresden.OntologyUtils._
 import org.phenoscape.scowl._
 import org.semanticweb.owlapi.model.parameters.Imports
 import org.semanticweb.owlapi.model.{OWLOntology, _}
+import org.semanticweb.owlapi.search.EntitySearcher
 import slick.dbio.Effect.Write
 import slick.jdbc.GetResult
 import slick.jdbc.PostgresProfile.api._
@@ -154,12 +155,12 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   }
 
   private val concepts = TableQuery[Concepts]
-  private val conceptAnnotations = TableQuery[ConceptAnnotations]
+  private val classAnnotations = TableQuery[ConceptAnnotations]
   private val roles = TableQuery[Roles]
-  private val roleAnnotations = TableQuery[RoleAnnotations]
+  private val objectPropertyAnnotations = TableQuery[RoleAnnotations]
   private val individuals = TableQuery[Individuals]
   private val individualAnnotations = TableQuery[IndividualAnnotations]
-  private val conceptAssertions = TableQuery[ConceptAssertions]
+  private val classAssertions = TableQuery[ConceptAssertions]
   private val roleAssertions = TableQuery[RoleAssertions]
   private val subConcepts = TableQuery[SubConcepts]
   private val subObjectProperties = TableQuery[SubObjectProperties]
@@ -169,10 +170,10 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
     individuals.schema,
     individualAnnotations.schema,
     roles.schema,
-    roleAnnotations.schema,
+    objectPropertyAnnotations.schema,
     concepts.schema,
-    conceptAnnotations.schema,
-    conceptAssertions.schema,
+    classAnnotations.schema,
+    classAssertions.schema,
     roleAssertions.schema,
     subConcepts.schema,
     subObjectProperties.schema)
@@ -196,7 +197,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
               case "42P01" => {
                 logger.info("Table don't exist. Creating them..")
                 manager.withDatabase(_.run(allRelations.reduce(_ ++ _).create))
-                conceptAssertions.schema.createStatements.foreach(println)
+                classAssertions.schema.createStatements.foreach(println)
               }
               case _ => throw e
             }
@@ -265,34 +266,33 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   }
 
   private def appendAnnotationsToDatabase(ontology: OWLOntology) = {
-    val queue = List(
-      (for {i <- individuals} yield (i.iri), individualAnnotations),
-      (for {i <- concepts} yield (i.iri), conceptAnnotations),
-      (for {i <- roles} yield (i.iri), roleAnnotations))
     var stmts: mutable.MutableList[(String, String, Int)] = mutable.MutableList.empty
+
+    var list = List((ontology.getClassesInSignature(Imports.INCLUDED).asScala,classAnnotations),
+      (ontology.getObjectPropertiesInSignature(Imports.INCLUDED).asScala,objectPropertyAnnotations),
+      (ontology.getIndividualsInSignature(Imports.INCLUDED).asScala,individualAnnotations))
+
     var i = 1
-    for (a <- ontology.getAnnotationAssertionAxioms(Imports.INCLUDED);
-         if a.getProperty.isLabel && a.getSubject.isInstanceOf[IRI] && a.getValue.isInstanceOf[OWLLiteral]) {
 
-      val value = a.getAnnotation.getValue
-      val iri:IRI = a.getSubject.asInstanceOf[IRI]
-      stmts.+:=(iri.toString, value.asInstanceOf[OWLLiteral].getLiteral, 0)
+    for ( (s,t) <- list) yield {
+      for {e <- s;
+           a <- EntitySearcher.getAnnotations(e, ontology).asScala;
+           if a.getProperty.isLabel && a.getValue.isInstanceOf[OWLLiteral]} yield {
+        val value = a.getValue
+        stmts.+:=(e.toDB, value.asInstanceOf[OWLLiteral].getLiteral, 0)
 
-      i += 1
-      if (i % 1000 == 0) {
-        logger.debug(s"$i elements processed, saving to DB")
-        manager.run(DBIO.seq(conceptAnnotations ++= stmts).asTry)
-        manager.run(DBIO.seq(roleAnnotations ++= stmts).asTry)
-        manager.run(DBIO.seq(individualAnnotations ++= stmts).asTry)
-        stmts.clear()
+        i += 1
+        if (i % 1000 == 0) {
+          logger.debug(s"$i elements processed, saving to DB")
+          manager.run(DBIO.seq(t ++= stmts))
+          stmts.clear()
+        }
       }
-    }
 
-    logger.debug(s"$i elements processed, saving to DB")
-    manager.run(DBIO.seq(conceptAnnotations ++= stmts).asTry)
-    manager.run(DBIO.seq(roleAnnotations ++= stmts).asTry)
-    manager.run(DBIO.seq(individualAnnotations ++= stmts).asTry)
-    stmts.clear()
+      logger.debug(s"$i elements processed, saving to DB")
+      manager.run(DBIO.seq(t ++= stmts))
+      stmts.clear()
+    }
   }
 
   private def appendHierarchyToDatabase(ontology: OWLOntology): Unit = {
@@ -398,7 +398,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   private def setupToDatabase(ontology: OWLOntology) = {
     logger.info("Setting up database schema")
-    setup(true)
+    setup(false)
     logger.info("Saving signature to database")
     appendSignatureToDatabase(ontology)
 
@@ -407,8 +407,8 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   private def saveAnnotations(ontology: OWLOntology) = {
     logger.info("Saving annotations to database")
     manager.run(individualAnnotations.schema.truncate)
-    manager.run(conceptAnnotations.schema.truncate)
-    manager.run(roleAnnotations.schema.truncate)
+    manager.run(classAnnotations.schema.truncate)
+    manager.run(objectPropertyAnnotations.schema.truncate)
     appendAnnotationsToDatabase(ontology)
   }
 
@@ -487,7 +487,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   private def saveAssertions(ontology: OWLOntology) = {
     logger.info("Saving assertions to database")
-    manager.run(conceptAssertions.schema.truncate)
+    manager.run(classAssertions.schema.truncate)
     manager.run(roleAssertions.schema.truncate)
     appendAssertionsToDatabase(ontology)
   }
@@ -507,7 +507,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   def queryMembers(cls: OWLClass): Traversable[OWLNamedIndividual] = {
     val q = for {
       c <- concepts; if c.iri === cls.toDB
-      a <- conceptAssertions; if a.conceptiri === c.iri
+      a <- classAssertions; if a.conceptiri === c.iri
       i <- individuals; if i.iri === a.indid
     } yield i.iri
     val r: Seq[String] = manager.withDatabase(db => db.run(q.result))
@@ -553,7 +553,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   def queryMembership(ind: OWLNamedIndividual): Iterable[OWLClass] = {
     val q = for {
-      a <- conceptAssertions; if a.indid === ind.toDB
+      a <- classAssertions; if a.indid === ind.toDB
     } yield a.conceptiri
     val r: Seq[String] = manager.withDatabase(db => db.run(q.distinct.result))
     r.map(s => Class(s))
@@ -561,7 +561,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   def queryInstance(cls: OWLClass, term: OWLNamedIndividual): Boolean = {
     val q = for {
-      a <- conceptAssertions; if a.indid === term.toDB && a.conceptiri === cls.toDB
+      a <- classAssertions; if a.indid === term.toDB && a.conceptiri === cls.toDB
     } yield a.indid
     manager.withDatabase(db => db.run(q.exists.result))
   }
@@ -575,14 +575,14 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   def getLabels(cls: OWLClass): Seq[String] = {
     val q = for {
-      l <- conceptAnnotations; if l.conceptiri === cls.toDB
+      l <- classAnnotations; if l.conceptiri === cls.toDB
     } yield l.label
     manager.withDatabase(db => db.run(q.result))
   }
 
   def getLabels(role: OWLObjectProperty): Seq[String] = {
     val q = for {
-      l <- roleAnnotations; if l.roleiri === role.toDB
+      l <- objectPropertyAnnotations; if l.roleiri === role.toDB
     } yield l.label
     manager.withDatabase(db => db.run(q.result))
   }

@@ -28,8 +28,8 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
   val BobsCancer = NamedIndividual(s"${prefix}BobsCancer")
   val Bob = NamedIndividual(s"${prefix}Bob")
 
-  val test_ontology: String = """
-    Prefix(:=<cancer#>)
+  val test_ontology: String = s"""
+    Prefix(:=<${prefix}>)
   Prefix(owl:=<http://www.w3.org/2002/07/owl#>)
   Prefix(rdf:=<http://www.w3.org/1999/02/22-rdf-syntax-ns#>)
   Prefix(xml:=<http://www.w3.org/XML/1998/namespace>)
@@ -37,7 +37,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
   Prefix(rdfs:=<http://www.w3.org/2000/01/rdf-schema#>)
   Prefix(time:=<http://www.w3.org/2006/time#>)
 
-  Ontology(<cancer>
+  Ontology(<http://cancer>
     Import(<http://www.w3.org/2006/time>)
 
       Declaration(Class(:Human))
@@ -61,8 +61,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
       Declaration(AnnotationProperty(rdfs:datetime))
       Declaration(AnnotationProperty(:diamond))
 
-
-      AnnotationAssertion(rdfs:label <:CancerPatient> "A patient that is diagnosed with Cancer"@en)
+      AnnotationAssertion(rdfs:label :CancerPatient "A patient diagnosed with Cancer."^^xsd:string)
 
         ############################
         #   Object Properties
@@ -232,7 +231,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
   }
 
   it should "Labels" in {
-    assert(dbmodel.getLabels(CancerPatient) == Set("A patient that is diagnosed with Cancer"))
+    assert(dbmodel.getLabels(CancerPatient).toSet == Set("A patient diagnosed with Cancer."))
   }
 
   it should "Members" in {

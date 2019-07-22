@@ -60,7 +60,7 @@ package object OntologyUtils {
 
     // To generate an inferred ontology we use implementations of
     // inferred axiom generators
-    val gens = new ArrayBuffer[InferredAxiomGenerator[_ <: OWLAxiom]]
+      val gens = new ArrayBuffer[InferredAxiomGenerator[_ <: OWLAxiom]]
     gens.append(new InferredSubClassAxiomGenerator)
     gens.append(new InferredClassAssertionAxiomGenerator())
 
