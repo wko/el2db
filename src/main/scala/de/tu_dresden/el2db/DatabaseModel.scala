@@ -29,8 +29,11 @@ object DatabaseModel extends StrictLogging {
 
 case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
-  
 
+  private class HashCode(tag: Tag) extends Table[Int](tag, "hash_code") {
+    def hash = column[Int]("hash_code", O.PrimaryKey)
+    def * = (hash)
+  }
 
   private class Concepts(tag: Tag) extends Table[String](tag, "concepts") {
     def iri = column[String]("iri", O.PrimaryKey)
@@ -164,6 +167,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   private val roleAssertions = TableQuery[RoleAssertions]
   private val subConcepts = TableQuery[SubConcepts]
   private val subObjectProperties = TableQuery[SubObjectProperties]
+  private val ontologyhashCode = TableQuery[HashCode]
 
 
   private val allRelations = List(
@@ -176,8 +180,31 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
     classAssertions.schema,
     roleAssertions.schema,
     subConcepts.schema,
-    subObjectProperties.schema)
+    subObjectProperties.schema,
+    ontologyhashCode.schema)
 
+
+  def truncate = {
+    logger.debug("Truncating the tables if existing")
+    try {
+      val truncateStmt =
+        """
+            TRUNCATE TABLE individuals, concepts, roles, hash_code CASCADE;
+          """.stripMargin
+      manager.raw(truncateStmt)
+    }
+    catch {
+      case e: org.postgresql.util.PSQLException => {
+        //logger.debug(s"PSQL Error ${e.getSQLState}")
+        e.getSQLState match {
+          case "42P01" => {
+            logger.info("Table don't exist")
+          }
+          case _ => throw e
+        }
+      }
+    }
+  }
 
   private def setup(resetSchema: Boolean = false) = {
     resetSchema match {
@@ -186,7 +213,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
         try {
           val truncateStmt =
             """
-            TRUNCATE TABLE individuals, concepts, roles CASCADE;
+            TRUNCATE TABLE individuals, concepts, roles, hash_code CASCADE;
           """.stripMargin
           manager.raw(truncateStmt)
         }
@@ -223,6 +250,16 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   }
 
+
+
+  def updateHash(ontology: OWLOntology): Unit = {
+      updateHash(ontology.hashCode())
+  }
+
+  def updateHash(hash: Int): Unit = {
+    manager.run(ontologyhashCode.delete)
+    manager.run(ontologyhashCode += hash)
+  }
 
   /**
     * Append the signature of a given ontology to the database
@@ -274,10 +311,15 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
     var i = 1
 
+    val labelProperties = Set("http://snomed.info/field/Description.term.en-us.preferred", "http://snomed.info/field/Description.term.en-us.synonym", "http://www.w3.org/2000/01/rdf-schema#label").map(IRI.create(_))
+    def isLabel(annotation: OWLAnnotation): Boolean = {
+      labelProperties.contains(annotation.getProperty.getIRI)
+    }
+
     for ( (s,t) <- list) yield {
       for {e <- s;
            a <- EntitySearcher.getAnnotations(e, ontology).asScala;
-           if a.getProperty.isLabel && a.getValue.isInstanceOf[OWLLiteral]} yield {
+           if isLabel(a) && a.getValue.isInstanceOf[OWLLiteral]} yield {
         val value = a.getValue
         stmts.+:=(e.toDB, value.asInstanceOf[OWLLiteral].getLiteral, 0)
 
@@ -404,7 +446,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
 
   }
 
-  private def saveAnnotations(ontology: OWLOntology) = {
+  def saveAnnotations(ontology: OWLOntology) = {
     logger.info("Saving annotations to database")
     manager.run(individualAnnotations.schema.truncate)
     manager.run(classAnnotations.schema.truncate)
@@ -497,6 +539,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
     saveAnnotations(ontology)
     saveAssertions(ontology)
     saveHierarchy(ontology)
+    updateHash(ontology)
   }
 
 
@@ -603,6 +646,24 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
   }
 
   def isInitialized(ontology: OWLOntology): Boolean = {
+    /*try {
+      val hash:Int = manager.withDatabase(_.run(hashCode.result))
+      ontology.hashCode() == hash
+      /*hash match {
+        case Some(h) => ontology.hashCode() == h
+        case None => false
+      }*/
+    } catch {
+      case e: org.postgresql.util.PSQLException => {
+        logger.debug("Database does not exist; Model is not initialized")
+        e.getSQLState match {
+          case "42P01" => return false
+          case _ => throw e
+        }
+      }
+    }
+    */
+
     try {
       logger.debug(s"Checking if model is initalized for db ${manager.dbname}..")
       logger.debug(manager.dbparams.toString)
@@ -611,7 +672,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
       val r = ontology.getObjectPropertiesInSignature(Imports.INCLUDED).size()
       val ocnts = (i, c, r)
       val cnts = getSignatureCounts
-      logger.debug(s"Comparing signature dbcounts == ontologycounts; $cnts == $ocnts")
+      logger.info(s"Comparing signature dbcounts == ontologycounts; $cnts == $ocnts")
       cnts == ocnts
     } catch {
       case e: org.postgresql.util.PSQLException => {
@@ -622,6 +683,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
         }
       }
     }
+
   }
 
   implicit private val getListStringResult = GetResult[List[String]](

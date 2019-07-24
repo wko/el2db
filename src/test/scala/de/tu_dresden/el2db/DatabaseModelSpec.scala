@@ -36,6 +36,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
   Prefix(xsd:=<http://www.w3.org/2001/XMLSchema#>)
   Prefix(rdfs:=<http://www.w3.org/2000/01/rdf-schema#>)
   Prefix(time:=<http://www.w3.org/2006/time#>)
+  Prefix(sctp:=<http://snomed.info/field/Description.term.>)
 
   Ontology(<http://cancer>
     Import(<http://www.w3.org/2006/time>)
@@ -62,6 +63,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
       Declaration(AnnotationProperty(:diamond))
 
       AnnotationAssertion(rdfs:label :CancerPatient "A patient diagnosed with Cancer."^^xsd:string)
+      AnnotationAssertion(sctp:en-us.synonym :CancerPatient "Cancer Patient."^^xsd:string)
 
         ############################
         #   Object Properties
@@ -179,8 +181,11 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
 
     DatabaseManager.createDatabaseIfNotExists(dbparams)
     dbman = DatabaseManager.getManager(dbparams)
+    dbmodel.truncate
+    assert(!dbmodel.isInitialized(ont))
     DatabaseModel.saveToDatabase(infOnt, dbman)
 
+    assert(dbmodel.isInitialized(ont))
   }
 
   "Queries" should "Class Hierarchy" in {
@@ -231,7 +236,7 @@ class DatabaseModelSpec extends FlatSpec with BeforeAndAfterAll with BeforeAndAf
   }
 
   it should "Labels" in {
-    assert(dbmodel.getLabels(CancerPatient).toSet == Set("A patient diagnosed with Cancer."))
+    assert(dbmodel.getLabels(CancerPatient).toSet == Set("A patient diagnosed with Cancer.", "Cancer Patient."))
   }
 
   it should "Members" in {
