@@ -21,8 +21,8 @@ Supported operations are:
 
 An easy way to use it in your project: 
 
-# sbt publishLocal 
+    sbt publishLocal 
 
 and the build.sbt of your project add the line 
 
-# "de.tu-dresden" %% "el2db" % "0.1.0-SNAPSHOT"
+    "de.tu-dresden" %% "el2db" % "0.1.0-SNAPSHOT"
