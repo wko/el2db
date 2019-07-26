@@ -645,7 +645,23 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
     (i, c, r)
   }
 
+  def dbExists():Boolean = {
+    try {
+      getSignatureCounts
+    } catch {
+      case e: org.postgresql.util.PSQLException => {
+        logger.debug("Database does not exist; Model is not initialized")
+        e.getSQLState match {
+          case "42P01" => return false
+          case _ => return false
+        }
+      }
+    }
+    return true
+  }
+
   def isInitialized(ontology: OWLOntology): Boolean = {
+    dbExists()
     /*try {
       val hash:Int = manager.withDatabase(_.run(hashCode.result))
       ontology.hashCode() == hash
@@ -662,7 +678,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
         }
       }
     }
-    */
+
 
     try {
       logger.debug(s"Checking if model is initalized for db ${manager.dbname}..")
@@ -682,7 +698,7 @@ case class DatabaseModel(manager: DatabaseManager) extends StrictLogging {
           case _ => throw e
         }
       }
-    }
+    }*/
 
   }
 
